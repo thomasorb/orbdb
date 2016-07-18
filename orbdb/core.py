@@ -1,0 +1,211 @@
+#!/usr/bin/python
+# *-* coding: utf-8 *-*
+# Author: Thomas Martin <thomas.martin.1@ulaval.ca>
+# File: core
+
+## Copyright (c) 2010-2015 Thomas Martin <thomas.martin.1@ulaval.ca>
+## 
+## This file is part of ORBDB
+##
+## ORBDB is free software: you can redistribute it and/or modify it
+## under the terms of the GNU General Public License as published by
+## the Free Software Foundation, either version 3 of the License, or
+## (at your option) any later version.
+##
+## ORBDB is distributed in the hope that it will be useful, but WITHOUT
+## ANY WARRANTY; without even the implied warranty of MERCHANTABILITY
+## or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public
+## License for more details.
+##
+## You should have received a copy of the GNU General Public License
+## along with ORBDB.  If not, see <http://www.gnu.org/licenses/>.
+
+import os
+
+from orb.core import Tools
+import orbdb.version
+
+import MySQLdb
+
+__version__ = orbdb.version.__version__
+
+class OrbDB(Tools):
+
+    recorded_keys = None
+    db = None
+    cur = None
+
+    def __init__(self, db_name, **kwargs):
+
+        kwargs['no_log'] = True
+        
+        Tools.__init__(self, **kwargs)
+        
+        self.recorded_keys = self.get_keys()
+        
+        
+        self.db = MySQLdb.connect('localhost', 'orbdb', 'orbdb-passwd', db_name, use_unicode=True, charset='utf8')
+        self.cur = self.db.cursor()
+        
+        # check if database is populated
+        self.cur.execute('show tables')
+        tables = self.cur.fetchall()
+        self.keys = []
+        if len(tables) == 0:
+            self._print_warning("Database is empty. To populate it use 'append' operation")
+            self.cur.execute("CREATE TABLE files ( fitsfilepath TEXT )")
+        else:
+            a = [table[0] for table in tables]
+            
+            if u'files' in [table[0] for table in tables]:
+                self.cur.execute("desc files")
+                self.keys = [col[0] for col in self.cur.fetchall()]
+            
+            else:
+                self._print_warning("Files table does not exist. To populate it use 'append' operation")
+                self.cur.execute("CREATE TABLE files ( fitsfilepath TEXT )")
+
+
+    def _get_formatted_key(self, key):
+        key_formatted = 'key' + str(key).lower()
+        if '-' in key:
+            key_formatted = ''.join(key_formatted.split('-'))
+        return key_formatted
+
+    def append(self, list_path):
+        with open(list_path, 'r') as f:
+            counts = 0
+            for line in f:
+                filepath = os.path.abspath(line.strip())
+                self.cur.execute("SELECT fitsfilepath from files WHERE fitsfilepath='{}'".format(filepath))
+                checked_files = self.cur.fetchall()
+                if len(checked_files) == 0:
+                    counts += 1
+                    hdu = self.read_fits(
+                        filepath, return_hdu_only=True)
+                    hdu.verify('fix')
+                    hdr = hdu[0].header
+                    self._print_msg('Updating database with {}'.format(filepath))
+                    self.cur.execute("INSERT INTO files SET fitsfilepath='{}'".format(filepath))
+                   
+                    #for key in hdr:
+                    for key in self.recorded_keys:
+                        #if key != 'COMMENT':
+                        if key in hdr :
+                            key_formatted = self._get_formatted_key(key)
+
+                            if key_formatted not in self.keys:
+
+                                if isinstance(hdr[key], str):
+                                    self._print_msg('Creating new column for key {}'.format(key))
+                                    self.cur.execute("ALTER TABLE files ADD {} VARCHAR(80)".format(key_formatted))
+                                elif isinstance(hdr[key], float):
+                                    self._print_msg('Creating new column for key {}'.format(key))
+                                    self.cur.execute("ALTER TABLE files ADD {} FLOAT".format(key_formatted))
+
+                                elif isinstance(hdr[key], bool):
+                                    self._print_msg('Creating new column for key {}'.format(key))
+                                    self.cur.execute("ALTER TABLE files ADD {} BOOL".format(key_formatted))
+
+                                elif isinstance(hdr[key], int):
+                                    self._print_msg('Creating new column for key {}'.format(key))
+                                    self.cur.execute("ALTER TABLE files ADD {} INT".format(key_formatted))
+                                elif isinstance(hdr[key], long):
+                                    self._print_msg('Creating new column for key {}'.format(key))
+                                    self.cur.execute("ALTER TABLE files ADD {} LONG".format(key_formatted))
+
+                                self.keys.append(key_formatted)
+
+                            try:
+                                value = hdr[key]
+                                if isinstance(value, bool):
+                                    value = int(value)
+
+                                self.cur.execute("UPDATE files SET {}='{}' WHERE fitsfilepath='{}'".format(key_formatted, value, filepath))
+
+                            except Exception, e:
+                                self._print_warning('Error: {}'.format(e))
+                    if counts > 20:
+                        self.db.commit()
+                        print '> commit'
+                        counts = 0
+                        
+                else:
+                    print '{} already in database'.format(filepath)
+            self.db.commit()
+            print '> commit'
+
+                                
+                
+    def clean(self):
+        self._print_warning('Cleaning database')
+        self.cur.execute('DROP TABLE IF EXISTS files')
+
+
+    def print_rows(self, key, expr=None):
+        if expr is not None:
+            if '=' in expr:
+                expr = expr.split('=')
+                operation = '='
+                fexpr = "WHERE {}{}'{}'".format(self._get_formatted_key(expr[0]), operation, expr[1])
+            else: self._print_error('Bad expression format')
+        else:
+            fexpr = ''
+        
+        for ikey in key:
+            if self._get_formatted_key(ikey) not in self.keys:
+                self._print_warning('{} not a valid keyword'.format(ikey))
+        keys = [',' + self._get_formatted_key(ikey) for ikey in key if self._get_formatted_key(ikey) in self.keys]
+        keys = ' '.join(keys)
+        self.cur.execute("SELECT fitsfilepath{} from files {}".format(
+            keys, fexpr))
+        for row in self.cur.fetchall():
+            row = [str(irow) for irow in row]
+            print ' '.join(row)
+
+    def list_rows(self, expr, order_key, file_type):
+        file_types = ['o', 'a', 'x', 'f', 'c']
+        if file_type is not None:
+            if file_type not in file_types:
+                self._print_error('File type must be in {}'.format(file_types))
+                
+        if '=' in expr:
+            expr = expr.split('=')
+            operation = '='    
+        else: self._print_error('Bad expression format')
+
+        if order_key is not None:
+            order_key = '{} ASC'.format(self._get_formatted_key(order_key))
+        else: order_key = 'NULL'
+
+        self.cur.execute("SELECT fitsfilepath from files WHERE {}{}'{}' ORDER BY {}".format(
+            self._get_formatted_key(expr[0]), operation, expr[1],
+            order_key))
+        
+        for row in self.cur.fetchall():
+            row = [str(irow) for irow in row]
+            file_name = ' '.join(row)
+            if file_type is not None:
+                if file_type + '.fits' in file_name:
+                    print file_name
+            else:
+                print file_name
+
+    def get_keys(self):
+        # get keys to record
+        recorded_keys = list()
+        rec_keys_path = os.path.join(os.path.dirname(
+            os.path.realpath(__file__)), 'rec_keys.orbdb')
+        
+        with open(rec_keys_path, 'r') as f:
+            for line in f:
+                recorded_keys.append(line.strip())
+        return recorded_keys
+
+
+    def __del__(self):
+        if self.db is not None:
+            self.db.commit()
+            self.db.close()
+        if self.cur is not None:
+            self.cur.close()
