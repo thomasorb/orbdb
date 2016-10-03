@@ -21,8 +21,8 @@
 ## along with ORBDB.  If not, see <http://www.gnu.org/licenses/>.
 
 import os
-
-from orb.core import Tools
+import numpy as np
+from orb.core import Tools, TextColor
 import orbdb.version
 
 import MySQLdb
@@ -159,9 +159,14 @@ class OrbDB(Tools):
         keys = ' '.join(keys)
         self.cur.execute("SELECT fitsfilepath{} from files {}".format(
             keys, fexpr))
+        rows_list = list()
         for row in self.cur.fetchall():
             row = [str(irow) for irow in row]
-            print ' '.join(row)
+            rows_list.append(row)
+
+        rows_list = sorted(rows_list, key=lambda irow: irow[0])
+        for irow in rows_list:
+            print ' '.join(irow)
 
     def list_rows(self, expr, order_key, file_type):
         file_types = ['o', 'a', 'x', 'f', 'c']
@@ -191,8 +196,130 @@ class OrbDB(Tools):
             else:
                 print file_name
 
+
+    def list_targets(self):
+        """List scans by target"""
+        
+        def format_name(_current_scan):
+            return ' '.join(_current_scan)
+        
+        self.cur.execute("SELECT {},{},{},{},{},{},{} from files ORDER BY {} ASC".format(
+            self._get_formatted_key('OBJECT'),
+            self._get_formatted_key('FILENAME'),
+            self._get_formatted_key('FILTER'),
+            self._get_formatted_key('RUNID'),
+            self._get_formatted_key('SITSTEP'),
+            self._get_formatted_key('PI_NAME'),
+            self._get_formatted_key('DATE'),
+            self._get_formatted_key('FILENAME')))
+        
+        current_scan = None, None
+        scans = dict()
+        for row in self.cur.fetchall():
+            if row[1][-1] in ('a', 'f', 'x') or 'twostep' in row[1]:
+                continue
+            
+            if np.all((row[0], row[2], row[1][-1]) != current_scan):
+                if len(scans) > 0:
+                    # update last scan
+                    scans[format_name(current_scan)] += list(
+                        ['end step: {}, file: {}, at {} '.format(
+                            last_step, last_filename, last_date)])
+                    ## del scans[-1]
+                    ## scans.append(list(last_scan)
+                    ##              + list([current_date]))
+
+                current_scan = (row[0], row[2], row[1][-1])
+                    
+                if format_name(current_scan) not in scans:
+                    scans[format_name(current_scan)] = [
+                        'start step: {}, file: {}, at {} '.format(
+                            row[4], row[1], row[6])]
+                else:
+                    scans[format_name(current_scan)] += list(
+                        ['start step: {}, file: {}, at {} '.format(
+                            row[4], row[1], row[6])])
+                    
+            last_date = row[6]
+            last_filename = row[1]
+            last_step = row[4]
+
+        lines = list()
+        for scan in scans:
+            lines.append((scan, ''.join(
+                ' > ' + iscan + '\n' for iscan in scans[scan])))
+            
+        lines = sorted(lines, key=lambda line: line[0])
+        for line in lines:
+            if line[0].strip().split()[-1] == 'o':
+                color = TextColor.GREEN
+            elif line[0].strip().split()[-1] == 'c':
+                color = TextColor.PURPLE
+            else: color = ''
+            
+            print color + line[0] + TextColor.END
+            print line[1]
+
+    def list_dates(self):
+        """List scans by dates"""
+        
+        def format_name(_current_scan):
+            return ' '.join(_current_scan)
+        
+        self.cur.execute("SELECT {},{},{},{},{},{},{} from files ORDER BY {} ASC".format(
+            self._get_formatted_key('OBJECT'),
+            self._get_formatted_key('FILENAME'),
+            self._get_formatted_key('FILTER'),
+            self._get_formatted_key('RUNID'),
+            self._get_formatted_key('SITSTEP'),
+            self._get_formatted_key('PI_NAME'),
+            self._get_formatted_key('DATE'),
+            self._get_formatted_key('FILENAME')))
+        
+        current_scan = None, None, None
+        current_date = None
+        last_date = None
+        for row in self.cur.fetchall():
+            if row[1][-1] in ('a', 'f', 'x') or 'twostep' in row[1]:
+                continue
+
+            if row[6].split('T')[0] != current_date:
+                if last_date is not None:
+                    print ' > end step: {}, file: {}, at {} '.format(
+                        last_step, last_filename, last_date)
+
+                print '\n===== {} ====='.format(current_date)                
+                current_date = row[6].split('T')[0]
+                last_date = None
+                current_scan = None
+                
+            if np.all((row[0], row[2], row[1][-1]) != current_scan):
+                # update last scan
+                if last_date is not None:
+                    print ' > end step: {}, file: {}, at {} '.format(
+                        last_step, last_filename, last_date.split('T')[1])
+                    
+                current_scan = (row[0], row[2], row[1][-1])
+                if current_scan[-1] == 'o':
+                    color = TextColor.GREEN
+                elif current_scan[-1] == 'c':
+                    color = TextColor.PURPLE
+                else:
+                    color = TextColor.END
+                print color + '{} {} {}'.format(*current_scan) + TextColor.END
+
+
+                print ' > start step: {}, file: {}, at {} '.format(
+                    row[4], row[1], row[6].split('T')[1])
+                    
+            last_date = row[6]
+            last_filename = row[1]
+            last_step = row[4]
+
+
+
     def get_keys(self):
-        # get keys to record
+        """get keys to record"""
         recorded_keys = list()
         rec_keys_path = os.path.join(os.path.dirname(
             os.path.realpath(__file__)), 'rec_keys.orbdb')
@@ -201,6 +328,8 @@ class OrbDB(Tools):
             for line in f:
                 recorded_keys.append(line.strip())
         return recorded_keys
+
+    
 
 
     def __del__(self):
