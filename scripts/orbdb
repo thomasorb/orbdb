@@ -44,7 +44,10 @@ def main(args):
             sys.exit(2)
 
     if args.subparser_name == 'clean':
-        db.clean()
+        check_yes = raw_input("Are you sure you want to clean the database ?\n type 'yes I want to clean the database': ")
+        if check_yes == 'yes I want to clean the database':
+            db.clean()
+        else: print 'phiuu'
 
     if args.subparser_name == 'list-targets':
         db.list_targets()
