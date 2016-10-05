@@ -85,12 +85,14 @@ class OrbDB(Tools):
                         filepath, return_hdu_only=True)
                     hdu.verify('fix')
                     hdr = hdu[0].header
+        
                     self._print_msg('Updating database with {}'.format(filepath))
                     self.cur.execute("INSERT INTO files SET fitsfilepath='{}'".format(filepath))
                    
-                    #for key in hdr:
+                    keys_formatted = list()
+                    values = list()
+                    to_set_string = list()
                     for key in self.recorded_keys:
-                        #if key != 'COMMENT':
                         if key in hdr :
                             key_formatted = self._get_formatted_key(key)
 
@@ -115,16 +117,22 @@ class OrbDB(Tools):
                                     self.cur.execute("ALTER TABLE files ADD {} LONG".format(key_formatted))
 
                                 self.keys.append(key_formatted)
-
-                            try:
-                                value = hdr[key]
-                                if isinstance(value, bool):
-                                    value = int(value)
-
-                                self.cur.execute("UPDATE files SET {}='{}' WHERE fitsfilepath='{}'".format(key_formatted, value, filepath))
-
-                            except Exception, e:
-                                self._print_warning('Error: {}'.format(e))
+                            keys_formatted.append(key_formatted)
+                            value = hdr[key]
+                            if isinstance(value, bool):
+                                value = int(value)
+                                
+                            values.append(value)
+                            to_set_string.append("{}='{}'".format(key_formatted, value))
+                            
+                                                
+                    try:
+                        to_set_string = ", ".join(to_set_string)
+                        self.cur.execute("UPDATE files SET {} WHERE fitsfilepath='{}'".format(to_set_string, filepath))
+                        
+                    except Exception, e:
+                        self._print_warning('Error: {}'.format(e))
+                        
                     if counts > 20:
                         self.db.commit()
                         print '> commit'
