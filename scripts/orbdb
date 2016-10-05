@@ -55,18 +55,9 @@ def main(args):
     if args.subparser_name == 'list-dates':
         db.list_dates()
 
-    ## if args.subparser_name == 'list':
-    ##     db.list_rows(args.list_expr, args.list_order_key, args.list_file_type)
-
-    ## if args.subparser_name == 'print':
-    ##     db.print_rows(args.print_key, args.print_expr)
-
-    if args.subparser_name == 'printall':
-        keywords = 'OBJECT FILTER RUNID PI_NAME'
-        if args.printall_step:
-            keywords += ' SITSTEP'
+    if args.subparser_name == 'print':
+        keywords = 'OBJECT FILTER RUNID PI_NAME SITSTEP'
         db.print_rows(keywords.split())
-
 
     if args.subparser_name == 'keys':
         for key in db.get_keys():
@@ -90,41 +81,14 @@ if __name__ == "__main__":
     parser_append.add_argument('append_list_path',
                                help='Path to a list of files to append')
     
-    parser_clean = subparsers.add_parser('clean', help='Clean database')
+    subparsers.add_parser('clean', help='Clean database')
 
-    parser_printall = subparsers.add_parser('printall', help='Print all basic keywords (OBJECT FILTER RUNID)')
-    parser_printall.add_argument(
-        '--step', action='store_true', dest="printall_step", default=False, 
-        help="Add SITSTEP to the printed keywords")
+    subparsers.add_parser('print', help='Print all basic keywords (OBJECT FILTER RUNID SITSTEP)')
+
+    subparsers.add_parser('list-targets', help='List scans by target name')
     
+    subparsers.add_parser('list-dates', help='List scans by date')
     
-    ## parser_print = subparsers.add_parser('print', help='Print keywords')
-    ## parser_print.add_argument(
-    ##     '-f',dest="print_expr", default=None, type=str,
-    ##     help="Filter expression based on keywords (it is best to use '' around the expression to avoid errors). e.g.: OBJNAME=NGC7317. Permitted operations are '='.")
-    ## parser_print.add_argument('print_key', help='keywords to print', nargs='+')
-    
-
-    ## parser_list = subparsers.add_parser('list', help='List files')
-    ## parser_list.add_argument('list_expr', help="Filter expression based on keywords (it is best to use '' around the expression to avoid errors). e.g.: OBJNAME=NGC7317. Permitted operations are '='.")
-    ## parser_list.add_argument(
-    ##     '--order',dest="list_order_key", default=None, type=str,
-    ##     help="Order files using the given keyword. e.g.: --order SITSTEP. If None given returned files won't be ordered. If two files have the same index, only the last one is kept")
-    ## parser_list.add_argument(
-    ##     '--type',dest="list_file_type", default=None, type=str,
-    ##     choices=['o', 'a', 'x', 'f', 'c'],
-    ##     help="Return only a certain file type")
-
-    ## parser_list = subparsers.add_parser('keys', help='List all recorded keys')
-
-    parser_list = subparsers.add_parser('list-targets', help='List scans by target name')
-    parser_list = subparsers.add_parser('list-dates', help='List scans by date')
-
-    
-    if len(sys.argv) < 2:
-        parser.print_usage()
-        sys.exit(2)
-        
     args=parser.parse_args()
     
     main(args)
