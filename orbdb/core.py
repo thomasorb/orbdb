@@ -286,7 +286,7 @@ class OrbDB(Tools):
             self._get_formatted_key('SITSTEP'),
             self._get_formatted_key('PI_NAME'),
             self._get_formatted_key('DATE'),
-            self._get_formatted_key('FILENAME')))
+            self._get_formatted_key('DATE')))
         
         current_scan = None, None, None
         current_date = None
