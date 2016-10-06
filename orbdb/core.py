@@ -288,6 +288,9 @@ class OrbDB(Tools):
         current_date = None
         last_date = None
         for row in self.cur.fetchall():
+            if row[1] is None:
+                continue
+            
             if row[1][-1] in ('a', 'f', 'x') or 'twostep' in row[1]:
                 continue
 
