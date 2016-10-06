@@ -224,6 +224,9 @@ class OrbDB(Tools):
         current_scan = None, None
         scans = dict()
         for row in self.cur.fetchall():
+            if row[1] is None:
+                continue
+            
             if row[1][-1] in ('a', 'f', 'x') or 'twostep' in row[1]:
                 continue
             
