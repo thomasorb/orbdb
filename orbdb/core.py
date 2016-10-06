@@ -209,6 +209,7 @@ class OrbDB(Tools):
         """List scans by target"""
         
         def format_name(_current_scan):
+            _current_scan = [str(_i) for _i in _current_scan]
             return ' '.join(_current_scan)
         
         self.cur.execute("SELECT {},{},{},{},{},{},{} from files ORDER BY {} ASC".format(
