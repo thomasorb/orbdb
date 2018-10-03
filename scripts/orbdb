@@ -31,13 +31,16 @@ from orbdb.core import OrbDB
 import orbdb.core
 import argparse
 from argparse import ArgumentParser
+from orb.core import Logger
 
 def main(args):
+    Logger().start_logging()
+    
     db = OrbDB(args.db_name)
     
     if args.subparser_name == 'append':
         if os.path.exists(args.append_list_path):
-            db.append(args.append_list_path)
+            db.append(args.append_list_path, args.force)
         else:
             print "Error: List file '{}' does not exist".format(
                 args.append_list_path)
@@ -81,6 +84,12 @@ if __name__ == "__main__":
     parser_append.add_argument('append_list_path',
                                help='Path to a list of files to append')
     
+    parser_append.add_argument('--force', dest='force',
+                               default=False,
+                               action='store_true',
+                               help='Force update')
+    
+    
     subparsers.add_parser('clean', help='Clean database')
 
     subparsers.add_parser('print', help='Print all basic keywords (OBJECT FILTER RUNID SITSTEP)')
@@ -88,6 +97,8 @@ if __name__ == "__main__":
     subparsers.add_parser('list-targets', help='List scans by target name')
     
     subparsers.add_parser('list-dates', help='List scans by date')
+
+    
     
     args=parser.parse_args()
     

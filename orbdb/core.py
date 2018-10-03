@@ -24,7 +24,8 @@ import os
 import numpy as np
 from orb.core import Tools, TextColor
 import orbdb.version
-
+import warnings
+import logging
 import MySQLdb
 
 __version__ = orbdb.version.__version__
@@ -36,9 +37,6 @@ class OrbDB(Tools):
     cur = None
 
     def __init__(self, db_name, **kwargs):
-
-        kwargs['no_log'] = True
-        
         Tools.__init__(self, **kwargs)
         
         self.recorded_keys = self.get_keys()
@@ -52,7 +50,7 @@ class OrbDB(Tools):
         tables = self.cur.fetchall()
         self.keys = []
         if len(tables) == 0:
-            self._print_warning("Database is empty. To populate it use 'append' operation")
+            warnings.warn("Database is empty. To populate it use 'append' operation")
             self.cur.execute("CREATE TABLE files ( fitsfilepath TEXT )")
         else:
             a = [table[0] for table in tables]
@@ -62,7 +60,7 @@ class OrbDB(Tools):
                 self.keys = [col[0] for col in self.cur.fetchall()]
             
             else:
-                self._print_warning("Files table does not exist. To populate it use 'append' operation")
+                warnings.warn("Files table does not exist. To populate it use 'append' operation")
                 self.cur.execute("CREATE TABLE files ( fitsfilepath TEXT )")
 
 
@@ -72,22 +70,25 @@ class OrbDB(Tools):
             key_formatted = ''.join(key_formatted.split('-'))
         return key_formatted
 
-    def append(self, list_path):
+    def append(self, list_path, force_update=False):
         with open(list_path, 'r') as f:
             counts = 0
             for line in f:
-                filepath = os.path.abspath(line.strip())
+                filepath = os.path.abspath(line.strip().split()[0])
                 self.cur.execute("SELECT fitsfilepath from files WHERE fitsfilepath='{}'".format(filepath))
                 checked_files = self.cur.fetchall()
-                if len(checked_files) == 0:
+                if len(checked_files) == 0 or force_update:
                     counts += 1
                     hdu = self.read_fits(
                         filepath, return_hdu_only=True)
                     hdu.verify('fix')
                     hdr = hdu[0].header
-        
-                    self._print_msg('Updating database with {}'.format(filepath))
+                    
+                    logging.info('Updating database with {}'.format(filepath))
+                    if force_update:
+                        self.cur.execute("DELETE FROM files WHERE fitsfilepath='{}'".format(filepath))
                     self.cur.execute("INSERT INTO files SET fitsfilepath='{}'".format(filepath))
+                   
                    
                     keys_formatted = list()
                     values = list()
@@ -99,21 +100,21 @@ class OrbDB(Tools):
                             if key_formatted not in self.keys:
 
                                 if isinstance(hdr[key], str):
-                                    self._print_msg('Creating new column for key {}'.format(key))
+                                    logging.info('Creating new column for key {}'.format(key))
                                     self.cur.execute("ALTER TABLE files ADD {} VARCHAR(80)".format(key_formatted))
                                 elif isinstance(hdr[key], float):
-                                    self._print_msg('Creating new column for key {}'.format(key))
+                                    logging.info('Creating new column for key {}'.format(key))
                                     self.cur.execute("ALTER TABLE files ADD {} FLOAT".format(key_formatted))
 
                                 elif isinstance(hdr[key], bool):
-                                    self._print_msg('Creating new column for key {}'.format(key))
+                                    logging.info('Creating new column for key {}'.format(key))
                                     self.cur.execute("ALTER TABLE files ADD {} BOOL".format(key_formatted))
 
                                 elif isinstance(hdr[key], int):
-                                    self._print_msg('Creating new column for key {}'.format(key))
+                                    logging.info('Creating new column for key {}'.format(key))
                                     self.cur.execute("ALTER TABLE files ADD {} INT".format(key_formatted))
                                 elif isinstance(hdr[key], long):
-                                    self._print_msg('Creating new column for key {}'.format(key))
+                                    logging.info('Creating new column for key {}'.format(key))
                                     self.cur.execute("ALTER TABLE files ADD {} LONG".format(key_formatted))
 
                                 self.keys.append(key_formatted)
@@ -121,17 +122,17 @@ class OrbDB(Tools):
                             value = hdr[key]
                             if isinstance(value, bool):
                                 value = int(value)
-                                
+                            if value == 'nan': value = -9999
                             values.append(value)
                             to_set_string.append("{}='{}'".format(key_formatted, value))
                             
                                                 
-                    try:
+                    try: 
                         to_set_string = ", ".join(to_set_string)
                         self.cur.execute("UPDATE files SET {} WHERE fitsfilepath='{}'".format(to_set_string, filepath))
                         
                     except Exception, e:
-                        self._print_warning('Error: {}'.format(e))
+                        warnings.warn('Error: {}'.format(e))
                         
                     if counts > 20:
                         self.db.commit()
@@ -146,7 +147,7 @@ class OrbDB(Tools):
                                 
                 
     def clean(self):
-        self._print_warning('Cleaning database')
+        warnings.warn('Cleaning database')
         self.cur.execute('DROP TABLE IF EXISTS files')
 
 
@@ -156,13 +157,13 @@ class OrbDB(Tools):
                 expr = expr.split('=')
                 operation = '='
                 fexpr = "WHERE {}{}'{}'".format(self._get_formatted_key(expr[0]), operation, expr[1])
-            else: self._print_error('Bad expression format')
+            else: raise StandardError('Bad expression format')
         else:
             fexpr = ''
         
         for ikey in key:
             if self._get_formatted_key(ikey) not in self.keys:
-                self._print_warning('{} not a valid keyword'.format(ikey))
+                warnings.warn('{} not a valid keyword'.format(ikey))
         keys = [',' + self._get_formatted_key(ikey) for ikey in key if self._get_formatted_key(ikey) in self.keys]
         keys = ' '.join(keys)
         self.cur.execute("SELECT fitsfilepath{} from files {}".format(
@@ -180,12 +181,12 @@ class OrbDB(Tools):
         file_types = ['o', 'a', 'x', 'f', 'c']
         if file_type is not None:
             if file_type not in file_types:
-                self._print_error('File type must be in {}'.format(file_types))
+                raise StandardError('File type must be in {}'.format(file_types))
                 
         if '=' in expr:
             expr = expr.split('=')
             operation = '='    
-        else: self._print_error('Bad expression format')
+        else: raise StandardError('Bad expression format')
 
         if order_key is not None:
             order_key = '{} ASC'.format(self._get_formatted_key(order_key))
@@ -266,7 +267,7 @@ class OrbDB(Tools):
             if line[0].strip().split()[-1] == 'o':
                 color = TextColor.GREEN
             elif line[0].strip().split()[-1] == 'c':
-                color = TextColor.PURPLE
+                color = TextColor.CYAN
             else: color = ''
             
             print color + line[0] + TextColor.END
@@ -318,7 +319,7 @@ class OrbDB(Tools):
                 if current_scan[-1] == 'o':
                     color = TextColor.GREEN
                 elif current_scan[-1] == 'c':
-                    color = TextColor.PURPLE
+                    color = TextColor.CYAN
                 else:
                     color = TextColor.END
                 print color + '{} {} {}'.format(*current_scan) + TextColor.END

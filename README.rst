@@ -1,6 +1,7 @@
-==============
- Installation
-==============
+ORBDB
+#####
+
+**ORBDB** SITELLE files database management system
 
 Install MySQL
 =============
@@ -29,6 +30,4 @@ Create mysql user and SITELLE database::
   mysql> GRANT ALL PRIVILEGES ON sitelle.* TO 'orbdb'@'localhost';
   
 
-Database password:
 
-root password is 'sitelle'
