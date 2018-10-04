@@ -58,6 +58,9 @@ def main(args):
     if args.subparser_name == 'list-dates':
         db.list_dates()
 
+    if args.subparser_name == 'list-between':
+        db.list_between(args.odo1, args.odo2)
+        
     if args.subparser_name == 'print':
         keywords = 'OBJECT FILTER RUNID PI_NAME SITSTEP'
         db.print_rows(keywords.split())
@@ -98,8 +101,12 @@ if __name__ == "__main__":
     
     subparsers.add_parser('list-dates', help='List scans by date')
 
+    between = subparsers.add_parser('list-between', help='List scans between two odometers')
+    between.add_argument('odo1', help='first odometer', type=int)
+    between.add_argument('odo2', help='last odometer', type=int)
     
     
-    args=parser.parse_args()
+    
+    args = parser.parse_args()
     
     main(args)

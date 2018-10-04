@@ -333,7 +333,24 @@ class OrbDB(Tools):
             last_step = row[4]
 
 
+    def list_between(self, odo1, odo2):
+        """List scans between two odometers"""
+        
+        if odo1 >= odo2: raise ValueError('first odometer must be lower than last odometer')
 
+        odolist = range(odo1, odo2 + 1)
+
+        for iodo in odolist:
+            self.cur.execute("SELECT fitsfilepath,{} from files WHERE {} LIKE '%{}%'".format(
+                self._get_formatted_key('SITSTEP'),
+                self._get_formatted_key('FILENAME'),
+                iodo))
+            
+            for row in self.cur.fetchall():
+                print row[0], row[1]
+        
+
+            
     def get_keys(self):
         """get keys to record"""
         recorded_keys = list()
