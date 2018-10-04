@@ -27,20 +27,18 @@ import orbdb.version
 import warnings
 import logging
 import MySQLdb
+import pandas as pd
 
 __version__ = orbdb.version.__version__
 
 class OrbDB(Tools):
 
-    recorded_keys = None
-    db = None
-    cur = None
-
+    base_keys = 'OBJECT', 'FILTER', 'RUNID', 'PI_NAME', 'SITSTEP'
+    
     def __init__(self, db_name, **kwargs):
         Tools.__init__(self, **kwargs)
         
         self.recorded_keys = self.get_keys()
-        
         
         self.db = MySQLdb.connect('localhost', 'orbdb', 'orbdb-passwd', db_name, use_unicode=True, charset='utf8')
         self.cur = self.db.cursor()
@@ -63,6 +61,36 @@ class OrbDB(Tools):
                 warnings.warn("Files table does not exist. To populate it use 'append' operation")
                 self.cur.execute("CREATE TABLE files ( fitsfilepath TEXT )")
 
+    
+    def __del__(self):
+        if self.db is not None:
+            self.db.commit()
+            self.db.close()
+        if self.cur is not None:
+            self.cur.close()
+
+    def _init_dataframe(self):
+        if hasattr(self, 'df'): return
+            
+        # create pandas dataframe
+        alldata = dict()
+        alldata['path'] = list()
+        alldata['odo'] = list()
+        for key in self.base_keys:
+            alldata[key] = list()
+
+        self.cur.execute("SELECT fitsfilepath,{} from files".format(
+            ','.join([self._get_formatted_key(key) for key in self.base_keys])))
+        
+        for row in self.cur.fetchall():
+            alldata['path'].append(row[0])
+            try: odo = int(os.path.split(row[0])[-1][:-6])
+            except ValueError: odo = 0
+            alldata['odo'].append(odo)
+            for i in range(len(self.base_keys)):
+                alldata[self.base_keys[i]].append(row[i+1])
+
+        self.df = pd.DataFrame(alldata)
 
     def _get_formatted_key(self, key):
         key_formatted = 'key' + str(key).lower()
@@ -144,12 +172,37 @@ class OrbDB(Tools):
             self.db.commit()
             print '> commit'
 
-                                
-                
     def clean(self):
         warnings.warn('Cleaning database')
         self.cur.execute('DROP TABLE IF EXISTS files')
 
+
+    def list_between(self, odo1, odo2):
+        """List scans between two odometers"""
+
+        self._init_dataframe()
+        if odo1 >= odo2: raise ValueError('first odometer must be lower than last odometer')
+
+        subdf = self.df[(self.df['odo'] <= odo2)
+                        * (self.df['odo'] >= odo1)]
+
+        for i in range(len(subdf)):
+            irow = subdf.iloc[i]
+            strl = list()
+            strl.append(irow['path'])
+            for key in self.base_keys:
+                val = irow[key]
+                if key in ['SITSTEP',]:
+                    try:
+                        val = str(int(val))
+                    except:
+                        val = str(None)
+                else:
+                    val = str(val)
+                strl.append(val)
+            print ' '.join(strl)
+            
+        
 
     def print_rows(self, key, expr=None):
         if expr is not None:
@@ -176,180 +229,6 @@ class OrbDB(Tools):
         rows_list = sorted(rows_list, key=lambda irow: irow[0])
         for irow in rows_list:
             print ' '.join(irow)
-
-    def list_rows(self, expr, order_key, file_type):
-        file_types = ['o', 'a', 'x', 'f', 'c']
-        if file_type is not None:
-            if file_type not in file_types:
-                raise StandardError('File type must be in {}'.format(file_types))
-                
-        if '=' in expr:
-            expr = expr.split('=')
-            operation = '='    
-        else: raise StandardError('Bad expression format')
-
-        if order_key is not None:
-            order_key = '{} ASC'.format(self._get_formatted_key(order_key))
-        else: order_key = 'NULL'
-
-        self.cur.execute("SELECT fitsfilepath from files WHERE {}{}'{}' ORDER BY {}".format(
-            self._get_formatted_key(expr[0]), operation, expr[1],
-            order_key))
-        
-        for row in self.cur.fetchall():
-            row = [str(irow) for irow in row]
-            file_name = ' '.join(row)
-            if file_type is not None:
-                if file_type + '.fits' in file_name:
-                    print file_name
-            else:
-                print file_name
-
-
-    def list_targets(self):
-        """List scans by target"""
-        
-        def format_name(_current_scan):
-            _current_scan = [str(_i) for _i in _current_scan]
-            return ' '.join(_current_scan)
-        
-        self.cur.execute("SELECT {},{},{},{},{},{},{} from files ORDER BY {} ASC".format(
-            self._get_formatted_key('OBJECT'),
-            self._get_formatted_key('FILENAME'),
-            self._get_formatted_key('FILTER'),
-            self._get_formatted_key('RUNID'),
-            self._get_formatted_key('SITSTEP'),
-            self._get_formatted_key('PI_NAME'),
-            self._get_formatted_key('DATE'),
-            self._get_formatted_key('FILENAME')))
-        
-        current_scan = None, None
-        scans = dict()
-        for row in self.cur.fetchall():
-            if row[1] is None:
-                continue
-            
-            if row[1][-1] in ('a', 'f', 'x') or 'twostep' in row[1]:
-                continue
-            
-            if np.all((row[0], row[2], row[1][-1]) != current_scan):
-                if len(scans) > 0:
-                    # update last scan
-                    scans[format_name(current_scan)] += list(
-                        ['end step: {}, file: {}, at {} '.format(
-                            last_step, last_filename, last_date)])
-                    ## del scans[-1]
-                    ## scans.append(list(last_scan)
-                    ##              + list([current_date]))
-
-                current_scan = (row[0], row[2], row[1][-1])
-                    
-                if format_name(current_scan) not in scans:
-                    scans[format_name(current_scan)] = [
-                        'start step: {}, file: {}, at {} '.format(
-                            row[4], row[1], row[6])]
-                else:
-                    scans[format_name(current_scan)] += list(
-                        ['start step: {}, file: {}, at {} '.format(
-                            row[4], row[1], row[6])])
-                    
-            last_date = row[6]
-            last_filename = row[1]
-            last_step = row[4]
-
-        lines = list()
-        for scan in scans:
-            lines.append((scan, ''.join(
-                ' > ' + iscan + '\n' for iscan in scans[scan])))
-            
-        lines = sorted(lines, key=lambda line: line[0])
-        for line in lines:
-            if line[0].strip().split()[-1] == 'o':
-                color = TextColor.GREEN
-            elif line[0].strip().split()[-1] == 'c':
-                color = TextColor.CYAN
-            else: color = ''
-            
-            print color + line[0] + TextColor.END
-            print line[1]
-
-    def list_dates(self):
-        """List scans by dates"""
-        
-        def format_name(_current_scan):
-            return ' '.join(_current_scan)
-        
-        self.cur.execute("SELECT {},{},{},{},{},{},{} from files ORDER BY {} ASC".format(
-            self._get_formatted_key('OBJECT'),
-            self._get_formatted_key('FILENAME'),
-            self._get_formatted_key('FILTER'),
-            self._get_formatted_key('RUNID'),
-            self._get_formatted_key('SITSTEP'),
-            self._get_formatted_key('PI_NAME'),
-            self._get_formatted_key('DATE'),
-            self._get_formatted_key('DATE')))
-        
-        current_scan = None, None, None
-        current_date = None
-        last_date = None
-        for row in self.cur.fetchall():
-            if row[1] is None:
-                continue
-            
-            if row[1][-1] in ('a', 'f', 'x') or 'twostep' in row[1]:
-                continue
-
-            if row[6].split('T')[0] != current_date:
-                if last_date is not None:
-                    print ' > end step: {}, file: {}, at {} '.format(
-                        last_step, last_filename, last_date)
-
-                print '\n===== {} ====='.format(current_date)                
-                current_date = row[6].split('T')[0]
-                last_date = None
-                current_scan = None
-                
-            if np.all((row[0], row[2], row[1][-1]) != current_scan):
-                # update last scan
-                if last_date is not None:
-                    print ' > end step: {}, file: {}, at {} '.format(
-                        last_step, last_filename, last_date.split('T')[1])
-                    
-                current_scan = (row[0], row[2], row[1][-1])
-                if current_scan[-1] == 'o':
-                    color = TextColor.GREEN
-                elif current_scan[-1] == 'c':
-                    color = TextColor.CYAN
-                else:
-                    color = TextColor.END
-                print color + '{} {} {}'.format(*current_scan) + TextColor.END
-
-
-                print ' > start step: {}, file: {}, at {} '.format(
-                    row[4], row[1], row[6].split('T')[1])
-                    
-            last_date = row[6]
-            last_filename = row[1]
-            last_step = row[4]
-
-
-    def list_between(self, odo1, odo2):
-        """List scans between two odometers"""
-        
-        if odo1 >= odo2: raise ValueError('first odometer must be lower than last odometer')
-
-        odolist = range(odo1, odo2 + 1)
-
-        for iodo in odolist:
-            self.cur.execute("SELECT fitsfilepath,{} from files WHERE {} LIKE '%{}%'".format(
-                self._get_formatted_key('SITSTEP'),
-                self._get_formatted_key('FILENAME'),
-                iodo))
-            
-            for row in self.cur.fetchall():
-                print row[0], row[1]
-        
-
             
     def get_keys(self):
         """get keys to record"""
@@ -364,10 +243,3 @@ class OrbDB(Tools):
 
     
 
-
-    def __del__(self):
-        if self.db is not None:
-            self.db.commit()
-            self.db.close()
-        if self.cur is not None:
-            self.cur.close()

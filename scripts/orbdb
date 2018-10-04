@@ -52,12 +52,6 @@ def main(args):
             db.clean()
         else: print 'phiuu'
 
-    if args.subparser_name == 'list-targets':
-        db.list_targets()
-
-    if args.subparser_name == 'list-dates':
-        db.list_dates()
-
     if args.subparser_name == 'list-between':
         db.list_between(args.odo1, args.odo2)
         
@@ -96,10 +90,6 @@ if __name__ == "__main__":
     subparsers.add_parser('clean', help='Clean database')
 
     subparsers.add_parser('print', help='Print all basic keywords (OBJECT FILTER RUNID SITSTEP)')
-
-    subparsers.add_parser('list-targets', help='List scans by target name')
-    
-    subparsers.add_parser('list-dates', help='List scans by date')
 
     between = subparsers.add_parser('list-between', help='List scans between two odometers')
     between.add_argument('odo1', help='first odometer', type=int)
