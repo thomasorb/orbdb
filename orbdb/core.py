@@ -23,6 +23,7 @@
 import os
 import numpy as np
 from orb.core import Tools, TextColor
+import orb.utils.io
 import orbdb.version
 import warnings
 import logging
@@ -39,8 +40,9 @@ class OrbDB(Tools):
         Tools.__init__(self, **kwargs)
         
         self.recorded_keys = self.get_keys()
-        
-        self.db = MySQLdb.connect('localhost', 'orbdb', 'orbdb-passwd', db_name, use_unicode=True, charset='utf8')
+
+        self.db = MySQLdb.connect('127.0.0.1', 'orbdb', 'orbdb-passwd',
+                                  db_name, use_unicode=True, charset='utf8')
         self.cur = self.db.cursor()
         
         # check if database is populated
@@ -107,7 +109,7 @@ class OrbDB(Tools):
                 checked_files = self.cur.fetchall()
                 if len(checked_files) == 0 or force_update:
                     counts += 1
-                    hdu = self.read_fits(
+                    hdu = orb.utils.io.read_fits(
                         filepath, return_hdu_only=True)
                     hdu.verify('fix')
                     hdr = hdu[0].header
